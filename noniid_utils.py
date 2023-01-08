@@ -1,4 +1,7 @@
-# copy from https://github.com/Xtra-Computing/NIID-Bench/blob/5371adbff98156793a413c7658923673b4aef7d7/utils.py
+'''
+Code is added from the following link:
+https://github.com/Xtra-Computing/NIID-Bench/
+'''
 
 import os
 import logging

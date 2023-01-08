@@ -1,3 +1,8 @@
+'''
+Code is added from the following link:
+https://github.com/Xtra-Computing/NIID-Bench/
+'''
+
 import torch.utils.data as data
 import torch
 from PIL import Image
