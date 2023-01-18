@@ -112,7 +112,10 @@ def init_nets(net_configs, dropout_p, n_parties, args):
                     elif args.dataset == 'celeba':
                         net = ModerateCNN(output_dim=2)
                 elif args.model == "resnet":
-                    net = ResNetClassifier(num_classes=n_classes)
+                    if args.pretrained:
+                        net = ResNetClassifier(num_classes=n_classes)
+                    else:
+                        net = ResNetClassifier(num_classes=n_classes, pretrained=False)
                 elif args.model == "vgg16":
                     net = vgg16()
                 else:
@@ -381,7 +384,8 @@ if __name__ == '__main__':
     parser.add_argument('--proj_w', type=float, required=False, default=0.5, help='how much weight for leveraging info from the source domains')
     parser.add_argument('--flip', type=float, required=False, default=0, help='whether to flip the gradient with some probability')
     parser.add_argument('--neg', action='store_true', help='whether set up the negative setting')
-
+    parser.add_argument('--pretrained', action='store_true', help='whether to pretrain the original model')
+    
     args = parser.parse_args()
     timestamp = time.strftime("%Y-%m-%d-%H%M")
     # if args.iter_idx != 0:  # If running multiple iters, store in same dir
@@ -439,11 +443,22 @@ if __name__ == '__main__':
             else:
                 dataidxs = net_dataidx_map[net_id]
                 # noise_level = args.noise / (args.n_parties) * net_id
-                train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
-                # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
-                randperm = torch.randperm(len(train_ds))
-                indices = randperm[:int(len(train_ds)*0.05)]
-                rest_indices = randperm[int(len(train_ds)*0.05):]
+                if args.dataset == 'cifar10':
+                    if args.partition == 'homo':
+                        train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
+                        randperm = torch.randperm(len(train_ds))
+                        indices = randperm[:int(len(train_ds)*0.1)]
+                        rest_indices = randperm[int(len(train_ds)*0.1):int(len(train_ds)*0.5)]
+                    else:
+                        train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+                        randperm = torch.randperm(len(train_ds))
+                        indices = randperm[:int(len(train_ds)*0.1)]
+                        rest_indices = randperm[int(len(train_ds)*0.1):]            
+                else:
+                    train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+                    randperm = torch.randperm(len(train_ds))
+                    indices = randperm[:int(len(train_ds)*0.1)]
+                    rest_indices = randperm[int(len(train_ds)*0.1):]
                 cur_sampler = SubsetRandomSampler(indices)
                 cur_sampler_rest = SubsetRandomSampler(rest_indices)
                 perturb_dl = torch.utils.data.DataLoader(train_ds, shuffle=False, batch_size=args.target_batch_size, sampler=cur_sampler)

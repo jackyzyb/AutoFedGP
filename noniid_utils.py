@@ -1,5 +1,5 @@
 '''
-Code is added from the following link:
+Code is modified from the following link:
 https://github.com/Xtra-Computing/NIID-Bench/
 '''
 
@@ -391,6 +391,62 @@ def partition_data(dataset, datadir, logdir, partition, n_parties, beta=0.4):
                     if i in contain[j]:
                         net_dataidx_map[j]=np.append(net_dataidx_map[j],split[ids])
                         ids+=1
+    
+    elif partition[:15] == "imbalance-class":
+        eta = float(partition.split('-')[-1])
+        if eta < 0 or eta > 0.5:
+            raise Exception("Incorrect value input for eta, should be between 0 and 0.5.")
+        if dataset in ('celeba', 'covtype', 'a9a', 'rcv1', 'SUSY'):
+            num = 1
+            K = 2
+        else:
+            K = 10
+        if dataset == "cifar100":
+            K = 100
+        elif dataset == "tinyimagenet":
+            K = 200
+
+        net_dataidx_map ={i:np.ndarray(0,dtype=np.int64) for i in range(n_parties)}
+
+        # randomly sample 3 classes
+        # cls_1 = np.random.choice(K, int(K*0.3),replace=False)
+        # cls_2 = np.setdiff1d(np.arange(K), cls_1)
+        cls_1 = [8, 6, 9] 
+        cls_2 = [0, 1, 2, 3, 4, 5, 7]
+        # cls_1 = [8, 6, 9, 3, 4, 2, 5, 7] 
+        # cls_2 = [0, 1]
+
+        # print(cls_1, cls_2)
+
+        for i in cls_1:
+            idx_k = np.where(y_train==i)[0]
+            np.random.shuffle(idx_k)
+            # split the idx_k according to eta
+            idx_k_1 = idx_k[:int(len(idx_k) * eta)]
+            idx_k_2 = idx_k[int(len(idx_k) * eta):]
+            
+            # idx_k_1 for (n-1) source clients, idx_k_2 for the target client
+            split = np.array_split(idx_k_1, n_parties-1)
+            # update source clients
+            for j in range(n_parties-1):
+                net_dataidx_map[j]=np.append(net_dataidx_map[j],split[j])
+            # update target client
+            net_dataidx_map[n_parties-1] = np.append(net_dataidx_map[n_parties-1], idx_k_2)
+
+        for i in cls_2:
+            idx_k = np.where(y_train==i)[0]
+            np.random.shuffle(idx_k)
+            # split the idx_k according to eta
+            idx_k_1 = idx_k[int(len(idx_k) * eta):]
+            idx_k_2 = idx_k[:int(len(idx_k) * eta)]
+            
+            # idx_k_1 for (n-1) source clients, idx_k_2 for the target client
+            split = np.array_split(idx_k_1, n_parties-1)
+            # update source clients
+            for j in range(n_parties-1):
+                net_dataidx_map[j]=np.append(net_dataidx_map[j],split[j])
+            # update target client
+            net_dataidx_map[n_parties-1] = np.append(net_dataidx_map[n_parties-1], idx_k_2)
 
     elif partition == "iid-diff-quantity":
         idxs = np.random.permutation(n_train)
@@ -731,18 +787,20 @@ def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_lev
 
             transform_train = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Lambda(lambda x: F.pad(
-                    Variable(x.unsqueeze(0), requires_grad=False),
-                    (4, 4, 4, 4), mode='reflect').data.squeeze()),
-                transforms.ToPILImage(),
-                transforms.RandomCrop(32),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
+                # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                # transforms.Lambda(lambda x: F.pad(
+                #     Variable(x.unsqueeze(0), requires_grad=False),
+                #     (4, 4, 4, 4), mode='reflect').data.squeeze()),
+                # transforms.ToPILImage(),
+                # transforms.RandomCrop(32),
+                # transforms.RandomHorizontalFlip(),
+                # transforms.ToTensor(),
                 AddGaussianNoise(0., noise_level, net_id, total)
             ])
             # data prep for test set
             transform_test = transforms.Compose([
                 transforms.ToTensor(),
+                # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                 AddGaussianNoise(0., noise_level, net_id, total)])
             
         elif dataset == 'cifar100':
@@ -797,8 +855,8 @@ def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_lev
             train_ds = dl_obj(datadir, dataidxs=dataidxs, train=True, transform=transform_train, download=True)
             test_ds = dl_obj(datadir, train=False, transform=transform_test, download=True)
 
-        train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, shuffle=True, drop_last=False)
-        test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=False, drop_last=False)
+        train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, shuffle=True, drop_last=True)
+        test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=False, drop_last=True)
 
     return train_dl, test_dl, train_ds, test_ds
 

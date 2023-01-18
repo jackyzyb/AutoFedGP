@@ -432,19 +432,37 @@ if __name__ == '__main__':
             # clients_dls['test'].append(test_dl)
             continue
         else:
-            if args.neg:
-                train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
+            dataidxs = net_dataidx_map[net_id]
+            # noise_level = args.noise / (args.n_parties) * net_id
+            if args.dataset == 'cifar10':
+                if args.partition == 'homo':
+                    train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
+                    randperm = torch.randperm(len(train_ds))
+                    indices = randperm[:int(len(train_ds)*0.075)]
+                    args.n_target_samples = int(len(train_ds)*0.075)
+                    rest_indices = randperm[int(len(train_ds)*0.075):int(len(train_ds)*0.5)]#(len(clients_dls['train'][0])*args.source_batch_size)]
+                else:
+                    train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+                    randperm = torch.randperm(len(train_ds))
+                    indices = randperm[:int(len(train_ds)*0.1)]
+                    args.n_target_samples = int(len(train_ds)*0.1)
+                    rest_indices = randperm[int(len(train_ds)*0.1):]
             else:
-                dataidxs = net_dataidx_map[net_id]
-                # noise_level = args.noise / (args.n_parties) * net_id
                 train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+                randperm = torch.randperm(len(train_ds))
+                if args.partition == 'homo':
+                    indices = randperm[:args.n_target_samples]
+                    rest_indices = randperm[args.n_target_samples:]#(len(clients_dls['train'][0])*args.source_batch_size)]
+                else:
+                    indices = randperm[:int(len(train_ds)*0.15)]
+                    args.n_target_samples = int(len(train_ds)*0.15)
+                    rest_indices = randperm[int(len(train_ds)*0.15):]
             # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
             server_dls['train'].append(train_dl)
             # server_dls['test'].append(test_dl)
             # target_train = ds['train'][idx]
-            randperm = torch.randperm(len(train_ds))
-            indices = randperm[:args.n_target_samples]
-            rest_indices = randperm[args.n_target_samples:]
+            
+
             cur_sampler = SubsetRandomSampler(indices)
             cur_sampler_rest = SubsetRandomSampler(rest_indices)
             perturb_dl = torch.utils.data.DataLoader(train_ds, shuffle=False, batch_size=args.target_batch_size, sampler=cur_sampler)
@@ -454,8 +472,7 @@ if __name__ == '__main__':
             # print(test_ds.target.min(), test_ds.target.max())
             # test_dl =  torch.utils.data.DataLoader(all_unlabel, shuffle=False, batch_size=args.target_batch_size)
             # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, 0)
-            # server_dls['test'].append(unlabeled_dl)
-            if args.neg:
+            if args.partition == 'homo':
                 server_dls['test'].append(test_dl)
             else:
                 server_dls['test'].append(unlabeled_dl)
@@ -541,38 +558,24 @@ if __name__ == '__main__':
             global_model.load_state_dict(global_model_dict)
 
     for i in range(args.num_global_epochs):
-        # training local models
-        # if args.proj_w > 0:
-        #     for idx in range(num_clients):
-        #         # if i == 0:
-        #         local_models[idx].load_state_dict(global_model_dict)
-        #         # else:
-        #             # new_local_model_dict = update_dict(global_model.state_dict(), local_models[idx].state_dict(), weights[idx])
-        #             # local_models[idx].load_state_dict(new_local_model_dict)
-        #         local_models[idx], (loss, acc, auc) = train(args, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
-        #         # clients_grads[idx] = get_model_updates(local_models[idx].to('cpu'), new_model.to('cpu'))
-        #         # local_models[idx].load_state_dict(new_model.state_dict())
-        #         clients_results['train']['loss'][idx].append(loss)
-        #         clients_results['train']['acc'][idx].append(acc)
-        #         clients_results['train']['auc'][idx].append(auc)
-        
-        # small purterbation on the target set
-        # new_model, _ = train(args, 'target', copy.deepcopy(global_model), criterion, perturb_dl)
-        # server_grad = get_model_updates(global_model.to('cpu'), new_model.to('cpu'))
-        # # set up the purtabation set
-        # for idx in range(num_clients):
-        # # for idx in range(num_clients):
-        #     cos_sim[idx] = cosine_similarity(server_grad, clients_grads[idx])[0][0]
+
+        # whether to freeze
+        if args.freeze:
+            # only unfreeze last two layers
+            for name, param in global_model.named_parameters():                
+                if 'fc3' not in name:
+                     param.requires_grad = False
         
         # averaging the weights
         global_model, (loss, acc, auc) = train(args, 'target', global_model, criterion, perturb_dl)
         server_results['train']['loss'].append(loss)
         server_results['train']['acc'].append(acc)
         server_results['train']['auc'].append(auc)
+
         # unfreeze all
-        # for name, param in global_model.named_parameters():
-        #     param.requires_grad = True
-        # global_model_dict = global_model.state_dict()
+        for name, param in global_model.named_parameters():
+            param.requires_grad = True
+        global_model_dict = global_model.state_dict()
 
         print('testing global model on its target domain')
         (loss, acc, auc) = test(args, global_model, criterion, server_dls['test'][0])

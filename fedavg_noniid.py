@@ -112,7 +112,10 @@ def init_nets(net_configs, dropout_p, n_parties, args):
                     elif args.dataset == 'celeba':
                         net = ModerateCNN(output_dim=2)
                 elif args.model == "resnet":
-                    net = ResNetClassifier(num_classes=n_classes)
+                    if args.pretrained:
+                        net = ResNetClassifier(num_classes=n_classes)
+                    else:
+                        net = ResNetClassifier(num_classes=n_classes, pretrained=False)
                 elif args.model == "vgg16":
                     net = vgg16()
                 else:
@@ -436,6 +439,7 @@ if __name__ == '__main__':
     parser.add_argument('--agg_before_gp', action='store_true', help='whether to avg the weights before gp')
     parser.add_argument('--convex_agg', action='store_true', help='whether to do convex combination with fedavg')
     parser.add_argument('--reverse_gp', action='store_true', help='whether to do reverse gradient projection')
+    parser.add_argument('--pretrained', action='store_true', help='whether to pretrain the original model')
 
     args = parser.parse_args()
     timestamp = time.strftime("%Y-%m-%d-%H%M")
@@ -488,14 +492,35 @@ if __name__ == '__main__':
         else:
             dataidxs = net_dataidx_map[net_id]
             # noise_level = args.noise / (args.n_parties) * net_id
-            train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+            if args.dataset == 'cifar10':
+                if args.partition == 'homo':
+                    train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
+                    randperm = torch.randperm(len(train_ds))
+                    indices = randperm[:int(len(train_ds)*0.075)]
+                    args.n_target_samples = int(len(train_ds)*0.075)
+                    rest_indices = randperm[int(len(train_ds)*0.075):int(len(train_ds)*0.5)]#(len(clients_dls['train'][0])*args.source_batch_size)]
+                else:
+                    train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+                    randperm = torch.randperm(len(train_ds))
+                    indices = randperm[:int(len(train_ds)*0.1)]
+                    args.n_target_samples = int(len(train_ds)*0.1)
+                    rest_indices = randperm[int(len(train_ds)*0.1):]
+            else:
+                train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, args.noise)
+                randperm = torch.randperm(len(train_ds))
+                if args.partition == 'homo':
+                    indices = randperm[:args.n_target_samples]
+                    rest_indices = randperm[args.n_target_samples:]#(len(clients_dls['train'][0])*args.source_batch_size)]
+                else:
+                    indices = randperm[:int(len(train_ds)*0.15)]
+                    args.n_target_samples = int(len(train_ds)*0.15)
+                    rest_indices = randperm[int(len(train_ds)*0.15):]
             # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
             server_dls['train'].append(train_dl)
             # server_dls['test'].append(test_dl)
             # target_train = ds['train'][idx]
-            randperm = torch.randperm(len(train_ds))
-            indices = randperm[:args.n_target_samples]
-            rest_indices = randperm[args.n_target_samples:]
+            
+
             cur_sampler = SubsetRandomSampler(indices)
             cur_sampler_rest = SubsetRandomSampler(rest_indices)
             perturb_dl = torch.utils.data.DataLoader(train_ds, shuffle=False, batch_size=args.target_batch_size, sampler=cur_sampler)
@@ -505,8 +530,10 @@ if __name__ == '__main__':
             # print(test_ds.target.min(), test_ds.target.max())
             # test_dl =  torch.utils.data.DataLoader(all_unlabel, shuffle=False, batch_size=args.target_batch_size)
             # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, 0)
-            # server_dls['test'].append(unlabeled_dl)
-            server_dls['test'].append(unlabeled_dl)
+            if args.partition == 'homo':
+                server_dls['test'].append(test_dl)
+            else:
+                server_dls['test'].append(unlabeled_dl)
             # train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, shuffle=True, drop_last=False)
 
         # for mode in ['train', 'test']:

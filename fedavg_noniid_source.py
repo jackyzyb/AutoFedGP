@@ -487,15 +487,15 @@ if __name__ == '__main__':
             dataidxs = net_dataidx_map[net_id]
             # noise_level = args.noise / (args.n_parties) * net_id
             # noise_level = 0
-            train_dl, test_dl, _, _ = get_dataloader(args.dataset, args.datadir, args.source_batch_size, 32, dataidxs, source_noises[net_id])
-            # train_dl, test_dl, _, _ = get_dataloader(args.dataset, args.datadir, args.source_batch_size, 32, dataidxs, 0)
+            # train_dl, test_dl, _, _ = get_dataloader(args.dataset, args.datadir, args.source_batch_size, 32, dataidxs, source_noises[net_id])
+            train_dl, test_dl, _, _ = get_dataloader(args.dataset, args.datadir, args.source_batch_size, 32, dataidxs, 0)
             clients_dls['train'].append(train_dl)
             clients_dls['test'].append(test_dl)
         else:
             # dataidxs = net_dataidx_map[net_id]
             # noise_level = args.noise / (args.n_parties) * net_id
-            train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, 0.8)
-            # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
+            # train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, dataidxs, 0.8)
+            train_dl, test_dl, train_ds, test_ds = get_dataloader(args.dataset, args.datadir, args.target_batch_size, 32, None, args.noise)
             server_dls['train'].append(train_dl)
             # server_dls['test'].append(test_dl)
             # target_train = ds['train'][idx]
