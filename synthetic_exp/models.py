@@ -8,7 +8,7 @@ def sigmoid_derivative(X: torch.Tensor):
 
 
 class Metrics_n_Datasets:
-    def __init__(self, source_data, target_data_all, target_sample_ratio, list_of_model, num_of_trails=10):
+    def __init__(self, source_data, target_data_all, target_sample_ratio, list_of_model, num_of_trails=40):
         # data are of shape [data_dim, num_data]
         self.source_X, self.source_Y = source_data
         self.target_X_all, self.target_Y_all = target_data_all
@@ -17,6 +17,7 @@ class Metrics_n_Datasets:
         self.num_of_trails = num_of_trails
         N = self.target_X_all.shape[1]
         N_target_samples = int(N * self.target_sample_ratio)
+        self.num_target_sample = N_target_samples
         data_split_list = list(range(N))
         random.shuffle(data_split_list)
         self.target_X = self.target_X_all[:, data_split_list[:N_target_samples]]
@@ -25,21 +26,35 @@ class Metrics_n_Datasets:
         self.target_Y_test = self.target_Y_all[:, data_split_list[N_target_samples:]]
 
     def compute_source_target_diff(self):
-        diff = 0.
-        for model in self.list_of_model:
-            grads_S = model.get_gradients(self.source_X, self.source_Y)
-            grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
-            diff += torch.norm(grads_T - grads_S)
-        return diff / len(self.list_of_model)
+        if len(self.list_of_model) > 1:
+            raise Exception("not implemented")
+        model = self.list_of_model[0]
+        grads_S = model.get_gradients(self.source_X, self.source_Y)
+        grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
+        diff = torch.norm(grads_T - grads_S)
+        return diff
 
-    def compute_target_var(self):
+    def compute_source_target_var(self, normalized=False):
+        if len(self.list_of_model) > 1:
+            raise Exception("not implemented")
+        model = self.list_of_model[0]
+        grads_S = model.get_gradients(self.source_X, self.source_Y)
+        grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
+        if normalized:
+            return torch.norm(grads_T - grads_S).item() ** 2 / len(grads_T)
+        else:
+            return torch.norm(grads_T - grads_S).item() ** 2
+
+    def compute_target_var(self, normalized=False):
         diff = 0.
+        if len(self.list_of_model) > 1:
+            raise Exception("not implemented")
         for model in self.list_of_model:
             for i in range(self.num_of_trails):
-                diff += self._compute_target_var_single_model(model)
+                diff += self._compute_target_var_single_model(model, normalized)
         return diff / self.num_of_trails
 
-    def _compute_target_var_single_model(self, model):
+    def _compute_target_var_single_model(self, model, normalized):
         # subsample data
         N = self.target_X_all.shape[1]
         N_target_samples = int(N * self.target_sample_ratio)
@@ -50,7 +65,25 @@ class Metrics_n_Datasets:
         Y_target = self.target_Y_all[:, data_split_list]
         grads_T = model.get_gradients(X_target, Y_target)
         grads_T_all = model.get_gradients(self.target_X_all, self.target_Y_all)
-        return torch.norm(grads_T - grads_T_all).item()
+        if normalized:
+            return torch.norm(grads_T - grads_T_all).item() ** 2 / len(grads_T)
+        else:
+            return torch.norm(grads_T - grads_T_all).item() ** 2
+
+    def compute_tau(self):
+        # see section 4.2 for definition
+        eps = 0.001 # room to numerical error
+        model = self.list_of_model[0]
+        grads_S = model.get_gradients(self.source_X, self.source_Y)
+        grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
+        diff = torch.norm(grads_T - grads_S)
+        cos_rho = (grads_S * grads_T).sum() / torch.norm(grads_T) / torch.norm(grads_S)
+        sin_rho = (1-cos_rho**2)**0.5
+        if diff < eps:
+            tau = 0
+        else:
+            tau = (torch.norm(grads_T) * sin_rho / diff).item()
+        return tau
 
 class NN:
     def __init__(self, n, d, m, device):
@@ -107,6 +140,7 @@ class NN:
         self.g_b1 = 0.
         self.g_W2 = 0.
         self.g_b2 = 0.
+        losses = []
         for epoch in range(num_epoch):
             grad_S = self.get_gradients(dataset.source_X, dataset.source_Y, is_flatten=False)
             grad_T = self.get_gradients(dataset.target_X, dataset.target_Y, is_flatten=False)
@@ -141,6 +175,7 @@ class NN:
             #     print('loss at epoch {} is {}'.format(epoch, loss))
 
         loss = self.test(dataset)
+            # losses.append(loss.item())
         print('final loss at epoch {} is {}'.format(epoch, loss))
         return loss
 
