@@ -70,10 +70,13 @@ for source_target_dist in source_target_dist_list:
         estimated_target_var = emp_metrics.target_var # estimation using only training data
         estimated_source_target_var = emp_metrics.source_target_var # estimation using only training data
         estimated_tau = emp_metrics.tau
+        estimated_delta = emp_metrics.delta
+        estimated_target_norm_square = emp_metrics.target_norm_square
 
         print('true target var: {}; its estimation: {}'.format(true_target_var, estimated_target_var))
         print('true source-target var: {}; its estimation: {}'.format(true_source_target_var, estimated_source_target_var))
         print('true tau is {}; its estimation: {}'.format(true_tau, estimated_tau))
+        print('estimated delta: {}'.format(estimated_delta))
         # compute estimated error terms
 
 
@@ -89,8 +92,8 @@ for source_target_dist in source_target_dist_list:
             tau = true_tau
         # choice of beta for GP and DA
         if auto_beta:
-            beta_GP = target_var / (target_var + tau ** 2 * source_target_var)
-            #beta_GP = target_var / (target_var + 0.5 * source_target_var)
+            # beta_GP = target_var / (target_var + tau ** 2 * source_target_var) # not using delta
+            beta_GP = target_var / (target_var + estimated_delta * tau ** 2 * source_target_var + (1-estimated_delta) * estimated_target_norm_square) # using estimated delta
             beta_DA = target_var / (target_var + source_target_var)
         else:
             beta_GP = beta

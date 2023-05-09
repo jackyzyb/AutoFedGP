@@ -14,6 +14,8 @@ class empirical_metrics_batch:
         self.target_var = None
         self.source_target_var = None
         self.tau = None
+        self.delta = None
+        self.target_norm_square = None
 
     def get_grads_subsample(self, dataset:Metrics_n_Datasets):
         # directly get those gradients
@@ -44,6 +46,12 @@ class empirical_metrics_batch:
         else:
             tau = (torch.norm(self.target_grad) * sin_rho / diff).item()
         self.tau = tau
+        # compute delta
+        inner_products = torch.sum(self.target_grads * self.source_grad, dim=1)
+        delta = torch.sum(inner_products > 0) / num_batches
+        self.delta = 1 - (1 - delta.item()) / num_batches
+        # compute norm of the target gradients
+        self.target_norm_square = torch.norm(self.target_grad).item() ** 2 / dim
 
     def _compute_subsample_target_grads(self, dataset):
         # subsample data
