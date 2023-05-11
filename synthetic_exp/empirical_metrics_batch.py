@@ -36,16 +36,24 @@ class empirical_metrics_batch:
         # compute source target difference
         sample_source_target_var = torch.sum((self.target_grads - self.source_grad) ** 2) / num_batches / dim
         self.source_target_var = max(sample_source_target_var - sample_target_var, 0.)
+        
         # compute tau
         eps = 0.0001  # room to numerical error
-        diff = torch.norm(self.target_grad - self.source_grad)
-        cos_rho = (self.source_grad * self.target_grad).sum() / torch.norm(self.target_grad) / torch.norm(self.source_grad)
-        sin_rho = (1 - cos_rho ** 2) ** 0.5
+        diff = self.source_target_var * dim
         if diff < eps:
-            tau = 0
+            tau = 0.
         else:
-            tau = (torch.norm(self.target_grad) * sin_rho / diff).item()
-        self.tau = tau
+            tau_square = (torch.mean(torch.norm(self.target_grads, dim=1)) - sample_target_var * dim) / diff
+        self.tau = max(tau_square, 0.) ** 0.5
+        # diff = torch.norm(self.target_grad - self.source_grad)
+        # cos_rho = (self.source_grad * self.target_grad).sum() / torch.norm(self.target_grad) / torch.norm(self.source_grad)
+        # sin_rho = (1 - cos_rho ** 2) ** 0.5
+        # if diff < eps:
+        #     tau = 0
+        # else:
+        #     tau = (torch.norm(self.target_grad) * sin_rho / diff).item()
+        # self.tau = tau
+
         # compute delta
         inner_products = torch.sum(self.target_grads * self.source_grad, dim=1)
         delta = torch.sum(inner_products > 0) / num_batches
