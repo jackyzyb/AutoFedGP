@@ -34,6 +34,19 @@ class Metrics_n_Datasets:
         diff = torch.norm(grads_T - grads_S)
         return diff
 
+    def compute_projected_grads_norm_square(self, normalized=False):
+        if len(self.list_of_model) > 1:
+            raise Exception("not implemented")
+        model = self.list_of_model[0]
+        grads_S = model.get_gradients(self.source_X, self.source_Y)
+        grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
+        projected_grad = grads_T - torch.sum(grads_T * grads_S) * grads_S / torch.norm(grads_S) ** 2
+        projected_grad_norm_square = projected_grad.norm() ** 2
+        if normalized:
+            return projected_grad_norm_square / len(grads_T)
+        else:
+            return projected_grad_norm_square
+
     def compute_source_target_var(self, normalized=False):
         if len(self.list_of_model) > 1:
             raise Exception("not implemented")
@@ -76,13 +89,13 @@ class Metrics_n_Datasets:
         model = self.list_of_model[0]
         grads_S = model.get_gradients(self.source_X, self.source_Y)
         grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
-        diff = torch.norm(grads_T - grads_S)
+        diff = torch.norm(grads_T - grads_S) ** 2
         cos_rho = (grads_S * grads_T).sum() / torch.norm(grads_T) / torch.norm(grads_S)
         sin_rho = (1-cos_rho**2)**0.5
         if diff < eps:
-            tau = 0
+            tau = 0.
         else:
-            tau = (torch.norm(grads_T) * sin_rho / diff).item()
+            tau = (torch.norm(grads_T) * sin_rho / diff ** 0.5).item()
         return tau
 
 class NN:

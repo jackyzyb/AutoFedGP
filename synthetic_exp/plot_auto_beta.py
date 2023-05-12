@@ -14,7 +14,6 @@ N = 5000   # num of samples
 num_centers = 10
 num_epoch = 300
 beta = 0.5
-seed = 233
 
 auto_beta = True
 is_estimation = True

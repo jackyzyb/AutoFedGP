@@ -14,7 +14,7 @@ beta = 0.5
 auto_beta = True
 is_estimation = True # choose to use estimated quantities to compute beta
 seed = 1
-batch_size = 10
+batch_size = 4
 torch.manual_seed(seed)
 np.random.seed(seed)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -60,6 +60,7 @@ for source_target_dist in source_target_dist_list:
         true_source_target_var = dataset.compute_source_target_var(normalized=True) # accurate and
         ##### Note: the square is already applied
         true_tau = dataset.compute_tau() # accurate
+        true_projected_grad_norm_square = dataset.compute_projected_grads_norm_square(normalized=True)
 
 
 
@@ -72,11 +73,13 @@ for source_target_dist in source_target_dist_list:
         estimated_tau = emp_metrics.tau
         estimated_delta = emp_metrics.delta
         estimated_target_norm_square = emp_metrics.target_norm_square
-
+        estimated_projected_grad_norm_square = emp_metrics.projected_grads_norm_square
+        print(' ')
         print('true target var: {}; its estimation: {}'.format(true_target_var, estimated_target_var))
         print('true source-target var: {}; its estimation: {}'.format(true_source_target_var, estimated_source_target_var))
         print('true tau is {}; its estimation: {}'.format(true_tau, estimated_tau))
         print('estimated delta: {}'.format(estimated_delta))
+        print('true projected_grad_norm_square: {}; its estimation: {}'.format(true_projected_grad_norm_square, estimated_projected_grad_norm_square))
         # compute estimated error terms
 
 
@@ -93,7 +96,9 @@ for source_target_dist in source_target_dist_list:
         # choice of beta for GP and DA
         if auto_beta:
             # beta_GP = target_var / (target_var + tau ** 2 * source_target_var) # not using delta
-            beta_GP = target_var / (target_var + estimated_delta * tau ** 2 * source_target_var + (1-estimated_delta) * estimated_target_norm_square) # using estimated delta
+            #beta_GP = target_var / (target_var + estimated_delta * tau ** 2 * source_target_var + (1-estimated_delta) * estimated_target_norm_square) # using estimated delta
+            beta_GP = target_var / (target_var + estimated_projected_grad_norm_square)
+            # beta_GP = target_var / (target_var + true_projected_grad_norm_square)
             beta_DA = target_var / (target_var + source_target_var)
         else:
             beta_GP = beta

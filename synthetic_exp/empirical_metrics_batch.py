@@ -16,6 +16,7 @@ class empirical_metrics_batch:
         self.tau = None
         self.delta = None
         self.target_norm_square = None
+        self.projected_grads_norm_square = None
 
     def get_grads_subsample(self, dataset:Metrics_n_Datasets):
         # directly get those gradients
@@ -38,13 +39,27 @@ class empirical_metrics_batch:
         self.source_target_var = max(sample_source_target_var - sample_target_var, 0.)
         
         # compute tau
-        eps = 0.0001  # room to numerical error
-        diff = self.source_target_var * dim
-        if diff < eps:
-            tau = 0.
-        else:
-            tau_square = (torch.mean(torch.norm(self.target_grads, dim=1)) - sample_target_var * dim) / diff
-        self.tau = max(tau_square, 0.) ** 0.5
+        # eps = 0.0001  # room to numerical error
+        # diff = self.source_target_var * dim
+        # if diff < eps:
+        #     tau_square = 0.
+        # else:
+        #     tau_square = (torch.mean(torch.norm(self.target_grads, dim=1) ** 2) - sample_target_var * dim) / diff
+        # self.tau = max(tau_square, 0.) ** 0.5
+
+        # compute projected source target var
+        projected_grads = self.target_grads - (torch.sum(self.target_grads * self.source_grad, dim=1) * self.source_grad.view([-1, 1])).T / torch.norm(self.source_grad) ** 2
+        projected_grad = self.target_grad - torch.sum(self.target_grad * self.source_grad) * self.source_grad / torch.norm(self.source_grad) ** 2
+        projected_grads_var = torch.sum((projected_grads - projected_grad) ** 2) / (num_batches - 1) / dim
+        projected_grads_norm_var = torch.mean(torch.norm(projected_grads, dim=1) ** 2) / dim
+        self.projected_grads_norm_square = max(projected_grads_norm_var - projected_grads_var, 0)
+
+        # compute the projection variance
+        # projected_target_var = (torch.sum((self.target_grads - torch.mean(self.target_grads, dim=0)) * self.source_grad / self.source_grad.norm(), dim=1) ** 2).mean() / dim
+        # projected_target_var_ratio = projected_target_var / torch.mean(torch.norm(self.target_grads - torch.mean(self.target_grads, dim=0), dim=1) ** 2)
+        # print('projected_target_var_ratio: {}'.format(projected_target_var_ratio))
+
+
         # diff = torch.norm(self.target_grad - self.source_grad)
         # cos_rho = (self.source_grad * self.target_grad).sum() / torch.norm(self.target_grad) / torch.norm(self.source_grad)
         # sin_rho = (1 - cos_rho ** 2) ** 0.5
