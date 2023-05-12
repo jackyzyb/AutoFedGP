@@ -30,9 +30,10 @@ def train(args, hparams, da_phase, model, criterion: torch.nn.Module, train_dl):
     global device
 
     model.to(device)
+    
     lr = hparams["lr"] if da_phase=='source' else hparams["lr"] * args.lr_ratio
-    # print(lr)
-    optimizer = torch.optim.Adam(model.parameters(), lr= lr)
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr= lr, weight_decay=lr*0.1)
     
     grads_all_epochs = []
 
@@ -248,6 +249,7 @@ if __name__ == "__main__":
     parser.add_argument('--proj_w', type=float, required=False, default=0.5, help='how much weight for leveraging info from the source domains')
     parser.add_argument('--convex_agg', action='store_true', help='whether to do convex combination with fedavg')
     parser.add_argument('--use_original_grad', action='store_true', help='if true we use the original grad instead of the model updates for computing metrics')
+    parser.add_argument('--log_metric', action='store_true', help='whether to log the metric contents')
     # arguments from domainbed
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--dataset', type=str, default="RotatedMNIST")
@@ -266,6 +268,7 @@ if __name__ == "__main__":
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0.15,
         help="For domain adaptation, % of test to use unlabeled for training.")
+
 
     args = parser.parse_args()
     # deterministic(args.train_seed)
@@ -408,6 +411,12 @@ if __name__ == "__main__":
     server_results['test']['loss'] = []
     server_results['test']['acc'] = []
     server_results['test']['auc'] = []
+    
+    metric_results = dict()
+    metric_results['target_var'] = []
+    metric_results['source_target_var'] = copy.deepcopy(dict_client)
+    metric_results['projected_norm'] = copy.deepcopy(dict_client)
+    metric_results['delta'] = copy.deepcopy(dict_client)
 
     # do fedavg for 2 epochs, to have a good initialization
     if args.load_trained_model:
@@ -427,6 +436,10 @@ if __name__ == "__main__":
             global_model_dict = average_weights([model.state_dict() for model in local_models], clients_size_frac)
             global_model.load_state_dict(global_model_dict)
 
+    # beta_start = torch.tensor(0.5)
+    # beta_start.to(device)
+    # gamma = 0.5
+    # beta_GP_0 = [beta_start for i in range(num_clients)]
     for i in range(args.num_global_epochs):
         # training local models
         source_grads = []
@@ -450,12 +463,22 @@ if __name__ == "__main__":
             server_results['train']['auc'].append(auc)
             if args.proj_w > 0:
                 metrics = empirical_metrics_batch(args.target_batch_size, source_grads, target_grads)
-                beta_GP = metrics.return_fedgp_beta()
-                # print(beta_GP)
-                for idx, beta in enumerate(beta_GP):
+                if args.log_metric:
+                    metric_results['target_var'].append(metrics.target_var.item())
+                    for i in range(num_clients):
+                        metric_results['source_target_var'][clients[i]].append(metrics.source_target_var[i].item())
+                        metric_results['projected_norm'][clients[i]].append(metrics.projected_grads_norm_square[i].item())
+                        metric_results['delta'][clients[i]].append(metrics.deltas[i])
+                beta_GP_1 = metrics.return_fedgp_beta()
+                # if i == 0:
+                #     beta_GP_0 = copy.deepcopy(beta_GP_1)
+                # beta_GP_1 = [beta_GP_0[i] * gamma + beta_GP_1[i] * (1-gamma)  for i in range(num_clients)]
+                # print(beta_GP_1)
+                for idx, beta in enumerate(beta_GP_1):
                     server_results['beta'][clients[idx]].append(beta.item())
-                global_model_dict = update_global(args, hparams, [model.state_dict() for model in local_models], global_model.state_dict(), new_model.state_dict(), clients_size, clients_size_frac, i, beta_GP)
+                global_model_dict = update_global(args, hparams, [model.state_dict() for model in local_models], global_model.state_dict(), new_model.state_dict(), clients_size, clients_size_frac, i, beta_GP_1)
                 global_model.load_state_dict(global_model_dict)
+                # beta_GP_0 = copy.deepcopy(beta_GP_1)
             else:
                 global_model = copy.deepcopy(new_model)
         elif args.convex_agg:
@@ -465,6 +488,10 @@ if __name__ == "__main__":
             server_results['train']['auc'].append(auc)
             if args.proj_w > 0:
                 metrics = empirical_metrics_batch(args.target_batch_size, source_grads, target_grads)
+                if args.log_metric:
+                    metric_results['target_var'].append(metrics.target_var.item())
+                    for i in range(num_clients):
+                        metric_results['source_target_var'][clients[i]].append(metrics.source_target_var[i].item())
                 beta_DA = metrics.return_fedda_beta()
                 # print(beta_DA)
                 for idx, beta in enumerate(beta_DA):
@@ -503,6 +530,11 @@ if __name__ == "__main__":
     with open(os.path.join(exp_dir,(f'server_results_{args.iter_idx}.json')), 'w') as fp:
             json.dump(server_results, fp, indent=4)
     fp.close()
+    
+    if args.log_metric:
+        with open(os.path.join(exp_dir,(f'metric_results_{args.iter_idx}.json')), 'w') as fp:
+                json.dump(metric_results, fp, indent=4)
+        fp.close()
 
     # torch.save(global_model.state_dict(),os.path.join(exp_dir,f'server_checkpoint_{args.iter_idx}.pt'))
 

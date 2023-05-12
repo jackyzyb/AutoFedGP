@@ -11,7 +11,8 @@ class empirical_metrics_batch:
         # call self.compute_quantities() to compute the following quantities after getting the above three quantities
         self.target_var = None
         self.source_target_var = [] # lenght of number of source clients
-        self.taus = [] # length of number of source clients
+        # self.taus = [] # length of number of source clients
+        self.projected_grads_norm_square = []
         self.deltas = []
         
         self.compute_quantities()
@@ -28,26 +29,35 @@ class empirical_metrics_batch:
             sample_source_target_var = torch.sum((self.target_grads - source_grad) ** 2) / num_batches / dim
             self.source_target_var.append(max(sample_source_target_var - sample_target_var, 0.))
             # compute tau
-            eps = 0.0001  # room to numerical error
-            diff = torch.norm(self.target_grad - source_grad)
-            cos_rho = (source_grad * self.target_grad).sum() / torch.norm(self.target_grad) / torch.norm(source_grad)
-            sin_rho = (1 - cos_rho ** 2) ** 0.5
-            if diff < eps:
-                tau = 0
-            else:
-                tau = (torch.norm(self.target_grad) * sin_rho / diff).item()
+            # eps = 0.0001  # room to numerical error
+            # diff = torch.norm(self.target_grad - source_grad)
+            # cos_rho = (source_grad * self.target_grad).sum() / torch.norm(self.target_grad) / torch.norm(source_grad)
+            # sin_rho = (1 - cos_rho ** 2) ** 0.5
+            # print(sin_rho)
+            # if diff < eps:
+            #     tau = 0
+            # else:
+            #     tau = (torch.norm(self.target_grad) * sin_rho / diff).item()
+            projected_grads = self.target_grads - (torch.sum(self.target_grads * source_grad, dim=1) * source_grad.view([-1, 1])).T / torch.norm(source_grad) ** 2
+            projected_grad = self.target_grad - torch.sum(self.target_grad * source_grad) * source_grad / torch.norm(source_grad) ** 2
+            projected_grads_var = torch.sum((projected_grads - projected_grad) ** 2) / (num_batches - 1) / dim
+            projected_grads_norm_var = torch.mean(torch.norm(projected_grads, dim=1) ** 2) / dim
+            self.projected_grads_norm_square.append(max(projected_grads_norm_var - projected_grads_var, 0.))
+
                 
             # compute delta
             inner_products = torch.sum(self.target_grads * source_grad, dim=1)
             delta = torch.sum(inner_products > 0) / num_batches
             self.deltas.append(1 - (1 - delta.item()) / num_batches)
-            self.taus.append(tau)
+            # self.taus.append(tau)
+        
+        # print(self.deltas, self.taus, self.source_target_var, self.target_var)
     
     def return_fedda_beta(self):
         return [self.target_var / (self.target_var + s_t_var) for s_t_var in self.source_target_var]
     
     def return_fedgp_with_thresh_beta(self):
-        return [self.target_var / (self.target_var + self.deltas[idx] * self.taus[idx] ** 2 * self.source_target_var[idx] + (1-self.deltas[idx]) * self.target_norm_square) for idx in range(len(self.source_grads))]
+        return [self.target_var / (self.target_var + self.deltas[idx] * self.projected_grads_norm_square[idx] + (1-self.deltas[idx]) * self.target_norm_square) for idx in range(len(self.source_grads))]
     
     def return_fedgp_beta(self):
-        return [self.target_var / (self.target_var + self.taus[idx] ** 2 * self.source_target_var[idx]) for idx in range(len(self.source_grads))]
+        return [self.target_var / (self.target_var + self.projected_grads_norm_square[idx]) for idx in range(len(self.source_grads))]
