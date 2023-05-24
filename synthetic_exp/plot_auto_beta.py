@@ -85,7 +85,6 @@ for source_target_dist in source_target_dist_list:
             beta_DA_list.append(beta_DA)
 
             delta_error_gp = true_delta_error_gp
-            # delta_error_gp = ((1-beta_GP)**2 + (2*beta_GP-beta_GP ** 2)/m) * target_var + beta_GP**2 * true_projected_grad_norm_square
             delta_error_convex = (1 - beta_GP) ** 2 * target_var + beta_GP ** 2 * source_target_var
             delta_error_target_only = target_var
             delta_error_source_only = source_target_var
