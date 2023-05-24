@@ -17,6 +17,7 @@ class empirical_metrics_batch:
         self.delta = None
         self.target_norm_square = None
         self.projected_grads_norm_square = None
+        self.projected_target_var_ratio = None
 
     def get_grads_subsample(self, dataset:Metrics_n_Datasets):
         # directly get those gradients
@@ -55,8 +56,9 @@ class empirical_metrics_batch:
         self.projected_grads_norm_square = max(projected_grads_norm_var - projected_grads_var, 0)
 
         # compute the projection variance
-        # projected_target_var = (torch.sum((self.target_grads - torch.mean(self.target_grads, dim=0)) * self.source_grad / self.source_grad.norm(), dim=1) ** 2).mean() / dim
-        # projected_target_var_ratio = projected_target_var / torch.mean(torch.norm(self.target_grads - torch.mean(self.target_grads, dim=0), dim=1) ** 2)
+        projected_target_var = (torch.sum((self.target_grads - torch.mean(self.target_grads, dim=0)) * self.source_grad / self.source_grad.norm(), dim=1) ** 2).mean() / dim
+        projected_target_var_ratio = projected_target_var / torch.mean(torch.norm(self.target_grads - torch.mean(self.target_grads, dim=0), dim=1) ** 2)
+        self.projected_target_var_ratio = projected_target_var_ratio
         # print('projected_target_var_ratio: {}'.format(projected_target_var_ratio))
 
 

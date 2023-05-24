@@ -67,6 +67,7 @@ class Metrics_n_Datasets:
                 diff += self._compute_target_var_single_model(model, normalized)
         return diff / self.num_of_trails
 
+
     def _compute_target_var_single_model(self, model, normalized):
         # subsample data
         N = self.target_X_all.shape[1]
@@ -82,6 +83,34 @@ class Metrics_n_Datasets:
             return torch.norm(grads_T - grads_T_all).item() ** 2 / len(grads_T)
         else:
             return torch.norm(grads_T - grads_T_all).item() ** 2
+
+    def compute_delta_error_gp(self, beta, normalized=False):
+        delta_error = 0.
+        if len(self.list_of_model) > 1:
+            raise Exception("not implemented")
+        for model in self.list_of_model:
+            for i in range(self.num_of_trails):
+                delta_error += self._compute_delta_error_gp_single_model(model, beta, normalized)
+        return delta_error / self.num_of_trails
+
+    def _compute_delta_error_gp_single_model(self, model, beta, normalized):
+        # subsample data
+        N = self.target_X_all.shape[1]
+        N_target_samples = int(N * self.target_sample_ratio)
+        data_split_list = list(range(N))
+        random.shuffle(data_split_list)
+        data_split_list = data_split_list[:N_target_samples]
+        X_target = self.target_X_all[:, data_split_list]
+        Y_target = self.target_Y_all[:, data_split_list]
+        grads_T = model.get_gradients(X_target, Y_target)
+        grads_T_all = model.get_gradients(self.target_X_all, self.target_Y_all)
+        grads_S = model.get_gradients(self.source_X, self.source_Y)
+        normalized_grad_S = grads_S / torch.norm(grads_S)
+        grad_gp = (1-beta) * grads_T + beta * torch.sum(grads_T * normalized_grad_S) * normalized_grad_S
+        if normalized:
+            return torch.norm(grad_gp - grads_T_all).item() ** 2 / len(grads_T)
+        else:
+            return torch.norm(grad_gp - grads_T_all).item() ** 2
 
     def compute_tau(self):
         # see section 4.2 for definition
@@ -157,6 +186,7 @@ class NN:
         for epoch in range(num_epoch):
             grad_S = self.get_gradients(dataset.source_X, dataset.source_Y, is_flatten=False)
             grad_T = self.get_gradients(dataset.target_X, dataset.target_Y, is_flatten=False)
+            grads_T_all = self.get_gradients(dataset.target_X_all, dataset.target_Y_all, is_flatten=False)
             if method == 'gradient_proj':
                 W1_update = gradient_proj(grad_T[0], grad_S[0], beta)
                 b1_update = gradient_proj(grad_T[1], grad_S[1], beta)
@@ -167,6 +197,11 @@ class NN:
                 b1_update = convex_combine(grad_T[1], grad_S[1], beta)
                 W2_update = convex_combine(grad_T[2], grad_S[2], beta)
                 b2_update = convex_combine(grad_T[3], grad_S[3], beta)
+            elif method == 'initialization_train':
+                W1_update = grads_T_all[0]
+                b1_update = grads_T_all[1]
+                W2_update = grads_T_all[2]
+                b2_update = grads_T_all[3]
             else:
                 raise NameError
             with torch.no_grad():

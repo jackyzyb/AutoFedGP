@@ -8,13 +8,15 @@ n = 50  # dim of x
 d = 10  # dim of y
 m = 100     # num of feature vectors
 N = 5000   # num of samples
+dim = m * (n+d)
 num_centers = 10
 num_epoch = 300
+initialization_num_epoch = 50
 beta = 0.5
 auto_beta = True
 is_estimation = True # choose to use estimated quantities to compute beta
 seed = 1
-batch_size = 4
+batch_size = 2
 torch.manual_seed(seed)
 np.random.seed(seed)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -45,9 +47,13 @@ for source_target_dist in source_target_dist_list:
         dataset = Metrics_n_Datasets((source_X, source_Y), (target_X_all, target_Y_all), target_sample_ratio, None)
 
         initialization_model_file = './models/temp_model'
-        model_gp = NN(n, d, m, device)
-        model_gp.save_model(initialization_model_file)
+        model_initial = NN(n, d, m, device)
+        # model_initial.train(dataset, initialization_num_epoch, 'initialization_train')
+        model_initial.save_model(initialization_model_file)
         # ensure the same initialization
+        model_gp = NN(n, d, m, device)
+        # model_gp.save_model(initialization_model_file)
+        model_gp.load_model(initialization_model_file, device)
         model_convex = NN(n, d, m, device)
         model_convex.load_model(initialization_model_file, device)
         model_target_only = NN(n, d, m, device)
@@ -61,8 +67,6 @@ for source_target_dist in source_target_dist_list:
         ##### Note: the square is already applied
         true_tau = dataset.compute_tau() # accurate
         true_projected_grad_norm_square = dataset.compute_projected_grads_norm_square(normalized=True)
-
-
 
         # now estimate the metrics using only training data at initialization (all models are the same)
         emp_metrics = empirical_metrics_batch(model_convex, target_batch_size=batch_size)
@@ -89,15 +93,17 @@ for source_target_dist in source_target_dist_list:
             target_var = estimated_target_var
             source_target_var = estimated_source_target_var
             tau = estimated_tau
+            projected_grad_norm_square = estimated_projected_grad_norm_square
         else:
             target_var = true_target_var
             source_target_var = true_source_target_var
             tau = true_tau
+            projected_grad_norm_square = true_projected_grad_norm_square 
         # choice of beta for GP and DA
         if auto_beta:
             # beta_GP = target_var / (target_var + tau ** 2 * source_target_var) # not using delta
             #beta_GP = target_var / (target_var + estimated_delta * tau ** 2 * source_target_var + (1-estimated_delta) * estimated_target_norm_square) # using estimated delta
-            beta_GP = target_var / (target_var + estimated_projected_grad_norm_square)
+            beta_GP = target_var / (target_var + projected_grad_norm_square)
             # beta_GP = target_var / (target_var + true_projected_grad_norm_square)
             beta_DA = target_var / (target_var + source_target_var)
         else:
@@ -105,6 +111,9 @@ for source_target_dist in source_target_dist_list:
             beta_DA = beta
 
         print('beta_GP = {}; beta_DA={}'.format(beta_GP, beta_DA))
+        true_delta_error_gp = dataset.compute_delta_error_gp(beta_GP, normalized=True)
+        approximated_delta_error_gp = ((1-beta_GP)**2 + (2*beta_GP-beta_GP ** 2)/dim) * target_var + beta_GP**2 * true_projected_grad_norm_square
+        print('true delta error gp is {}, its approximation is {}'.format(true_delta_error_gp, approximated_delta_error_gp))
 
 
 
@@ -129,9 +138,11 @@ for source_target_dist in source_target_dist_list:
         result_dict = {'test_loss_gp': test_loss_gp, 'test_loss_convex': test_loss_convex, 'test_loss_target_only':
             test_loss_target_only, 'test_loss_source_only': test_loss_source_only, 'source_target_var': true_source_target_var,
                        "target_var": true_target_var, 'estimated_source_target_var': estimated_source_target_var,
-                       "estimated_target_var": estimated_target_var, "beta_GP": beta_GP, "beta_DA": beta_DA}
+                       "estimated_target_var": estimated_target_var, "true_projected_grad_norm_square": true_projected_grad_norm_square,
+                       "estimated_projected_grad_norm_square": estimated_projected_grad_norm_square, "true_delta_error_gp": true_delta_error_gp,
+                       "beta_GP": beta_GP, "beta_DA": beta_DA}
 
         result_file_handle = 'test_loss-rbf-n-' + str(n) + '-d-' + str(d) + '-m-' + str(m) + '-N-' + str(N) + '-num_centers-' + str(
-            num_centers) + '-source_target_diff-' + str(source_target_dist) + '-target-sample-ratio-' + str(target_sample_ratio) + '-auto_beta=' + str(auto_beta) + '-is_estimateion=' + str(is_estimation)
+            num_centers) + '-seed-' + str(seed) + '-source_target_diff-' + str(source_target_dist) + '-target-sample-ratio-' + str(target_sample_ratio) + '-auto_beta=' + str(auto_beta) + '-is_estimateion=' + str(is_estimation)
         data_file = './results/' + result_file_handle
         torch.save(result_dict, data_file)
