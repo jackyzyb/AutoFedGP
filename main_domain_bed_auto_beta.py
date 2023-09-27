@@ -26,7 +26,70 @@ from domainbed.lib import misc
 from domainbed.lib.fast_data_loader import InfiniteDataLoader, FastDataLoader
 from empirical_metric import empirical_metrics_batch
 
-def train(args, hparams, da_phase, model, criterion: torch.nn.Module, train_dl):
+def train_source(args, hparams, da_phase, model, criterion: torch.nn.Module, train_dl):
+    global device
+
+    model.to(device)
+    
+    lr = hparams["lr"] if da_phase=='source' else hparams["lr"] * args.lr_ratio
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr= lr) #, weight_decay=lr*0.1)
+    
+    grads_all_epochs = []
+    
+
+    model.train()
+    num_epochs = args.num_source_epochs if da_phase == 'source' else args.num_target_epochs
+
+    for epoch in range(num_epochs):
+        running_loss = 0.0
+        running_corrects = 0
+        y_true_list = list()
+        num_batches = 0
+        model_init = copy.deepcopy(model)
+
+
+        with tqdm(train_dl, unit="batch") as tepoch:
+            for (imgs, labels) in tepoch:
+                num_batches += 1
+                tepoch.set_description(f"Epoch {epoch}")
+                inputs = imgs.to(device)
+                labels = labels.long().to(device)
+
+                # Zero the parameter gradients
+                optimizer.zero_grad()
+
+                # Forward pass
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                tepoch.set_postfix(loss=loss.item())
+                for i in range(len(outputs)):
+                    y_true_list.append(labels[i].cpu().data.tolist())
+
+                # Backward pass
+                loss.backward()
+                optimizer.step()
+
+                # Keep track of performance metrics (loss is mean-reduced)
+                running_loss += loss.item() * inputs.size(0)
+                _, preds = torch.max(outputs.data, 1)
+                running_corrects += torch.sum(preds == labels.data).item()
+
+
+            epoch_loss = running_loss / len(y_true_list)
+            epoch_acc = float(running_corrects) / len(y_true_list)
+            
+            grads_all_epochs.append(get_model_updates(model_init, model).detach().cpu() / num_batches)
+
+    grads_all_epochs = torch.mean(torch.stack(grads_all_epochs),dim=0)
+
+    # Keep track of current training loss and accuracy
+    final_train_loss = epoch_loss
+    final_train_acc = epoch_acc
+
+    return model, grads_all_epochs, (final_train_loss, final_train_acc, None)
+
+def train_target(args, hparams, da_phase, model, criterion: torch.nn.Module, train_dl):
     global device
 
     model.to(device)
@@ -72,18 +135,21 @@ def train(args, hparams, da_phase, model, criterion: torch.nn.Module, train_dl):
                 cur_grad = []
                 if args.use_original_grad:
                     for _, param in model.named_parameters():
-                        cur_grad.append(param.grad.detach().clone().flatten())
+                        cur_grad.append(param.grad.detach().clone().flatten().cpu())
                     cur_grad = torch.cat(cur_grad)
                     grads.append(cur_grad)
                 else:
                     # we use the model update as the grad
-                    cur_grad = get_model_updates(model_init, model)
+                    cur_grad = get_model_updates(model_init, model).cpu()
                     grads.append(cur_grad)
 
                 # Keep track of performance metrics (loss is mean-reduced)
                 running_loss += loss.item() * inputs.size(0)
                 _, preds = torch.max(outputs.data, 1)
                 running_corrects += torch.sum(preds == labels.data).item()
+                
+                gc.collect()
+                torch.cuda.empty_cache()
 
             epoch_loss = running_loss / len(y_true_list)
             epoch_acc = float(running_corrects) / len(y_true_list)
@@ -183,7 +249,7 @@ def update_global(args, hparams, local_models_dict, old_global_model_dict, finet
                 # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
                 # else:
                     # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * local_grad
-            ret_dict[key] = ret_dict[key] + (1-beta_GP[idx]) * global_grad
+                ret_dict[key] = ret_dict[key] + (1-beta_GP[idx]) * global_grad * clients_size_frac[idx]
         else:
             ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             for idx, local_dict in enumerate(local_models_dict):
@@ -207,7 +273,7 @@ def update_global_convex(args, local_models_dict, old_global_model_dict, finetun
                 # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * cos_sim[idx] * local_grad
                 ret_dict[key] = ret_dict[key] + beta_DA[idx] * clients_size_frac[idx] * local_grad
                     # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
-            ret_dict[key] = ret_dict[key] + (1-beta_DA[idx]) * global_grad
+                ret_dict[key] = ret_dict[key] + (1-beta_DA[idx]) * global_grad * clients_size_frac[idx]
         else:
             ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             for idx, local_dict in enumerate(local_models_dict):
@@ -235,7 +301,7 @@ def get_param_list(model):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='MSDA')
     # arguments from fedgp
-    parser.add_argument('--exp_dir', type=str, default='fl_domainbed_auto')
+    parser.add_argument('--exp_dir', type=str, default='fl_domainbed_auto_new')
     parser.add_argument('--iter_idx', type=str, default='0')
     parser.add_argument('--load_trained_model', action='store_true')
     parser.add_argument('--model_path', type=str, default=None)
@@ -323,6 +389,11 @@ if __name__ == "__main__":
     server = []
     for env_i, env in enumerate(dataset):
         uda = []
+        # sample a subset for domainnet
+        # if args.dataset == 'DomainNet':
+        #     env, _ = misc.split_dataset(env,
+        #         30000,
+        #         misc.seed_hash(args.trial_seed, env_i))
 
         # split training/testing data
         out, in_ = misc.split_dataset(env,
@@ -440,13 +511,13 @@ if __name__ == "__main__":
         global_model.load_state_dict(torch.load(args.model_path))
     elif args.proj_w > 0:
         if args.dataset == 'TerraIncognita':
-            num_init = 10
+            num_init = 5
         else:
             num_init = 2
         for _ in range(num_init):
             for idx in range(num_clients):
                 local_models[idx].load_state_dict(global_model_dict)
-                local_models[idx], _, (loss, acc, auc) = train(args, hparams, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
+                local_models[idx], _, (loss, acc, auc) = train_source(args, hparams, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
                 gc.collect()
                 torch.cuda.empty_cache()
             # print(local_models)
@@ -457,7 +528,8 @@ if __name__ == "__main__":
     # beta_start.to(device)
     # gamma = 0.5
     # beta_GP_0 = [beta_start for i in range(num_clients)]
-    hparams["lr"] = hparams["lr"] * 0.25
+    # hparams["lr"] = hparams["lr"] * 0.5
+    hparams["lr"] = hparams["lr"] * 0.1
     for i in range(args.num_global_epochs):
         # training local models
         source_grads = []
@@ -465,7 +537,7 @@ if __name__ == "__main__":
         if args.proj_w > 0:
             for idx in range(num_clients):
                 local_models[idx].load_state_dict(global_model_dict)
-                local_models[idx], source_grad, (loss, acc, auc) = train(args, hparams, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
+                local_models[idx], source_grad, (loss, acc, auc) = train_source(args, hparams, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
                 clients_results['train']['loss'][clients[idx]].append(loss)
                 clients_results['train']['acc'][clients[idx]].append(acc)
                 clients_results['train']['auc'][clients[idx]].append(auc)
@@ -475,11 +547,13 @@ if __name__ == "__main__":
         
         # averaging the weights
         if args.use_sim:
-            new_model, target_grads, (loss, acc, auc) = train(args, hparams, 'target', copy.deepcopy(global_model), criterion, server_dls['train'][0])
+            new_model, target_grads, (loss, acc, auc) = train_target(args, hparams, 'target', copy.deepcopy(global_model), criterion, server_dls['train'][0])
             server_results['train']['loss'].append(loss)
             server_results['train']['acc'].append(acc)
             server_results['train']['auc'].append(auc)
             if args.proj_w > 0:
+                gc.collect()
+                torch.cuda.empty_cache()
                 metrics = empirical_metrics_batch(args.target_batch_size, source_grads, target_grads)
                 if args.log_metric:
                     metric_results['target_var'].append(metrics.target_var.item())
@@ -488,6 +562,7 @@ if __name__ == "__main__":
                         metric_results['projected_norm'][clients[i]].append(metrics.projected_grads_norm_square[i].item())
                         metric_results['delta'][clients[i]].append(metrics.deltas[i])
                 beta_GP_1 = metrics.return_fedgp_beta()
+                # print(beta_GP_1)
                 # if i == 0:
                 #     beta_GP_0 = copy.deepcopy(beta_GP_1)
                 # beta_GP_1 = [beta_GP_0[i] * gamma + beta_GP_1[i] * (1-gamma)  for i in range(num_clients)]
@@ -500,7 +575,7 @@ if __name__ == "__main__":
             else:
                 global_model = copy.deepcopy(new_model)
         elif args.convex_agg:
-            new_model, target_grads, (loss, acc, auc) = train(args, hparams, 'target', copy.deepcopy(global_model), criterion, server_dls['train'][0])
+            new_model, target_grads, (loss, acc, auc) = train_target(args, hparams, 'target', copy.deepcopy(global_model), criterion, server_dls['train'][0])
             server_results['train']['loss'].append(loss)
             server_results['train']['acc'].append(acc)
             server_results['train']['auc'].append(auc)
@@ -526,7 +601,7 @@ if __name__ == "__main__":
                 # for name, param in global_model.named_parameters():
                     # if not 'linear' in name:
                     #     param.requires_grad = False
-                global_model, (loss, acc, auc) = train(args, hparams, 'target', global_model, criterion, server_dls['train'][0])
+                global_model, (loss, acc, auc) = train_target(args, hparams, 'target', global_model, criterion, server_dls['train'][0])
                 server_results['train']['loss'].append(loss)
                 server_results['train']['acc'].append(acc)
                 server_results['train']['auc'].append(auc)

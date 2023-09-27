@@ -340,7 +340,7 @@ def update_global(args, local_models_dict, old_global_model_dict, finetune_globa
                 if cur_sim > 0:
                     ret_dict[key] = ret_dict[key] + beta_GP[idx] * (args.target_lr / args.source_lr) * ((args.n_target_samples/args.target_batch_size)/(clients_size[idx]/args.source_batch_size)) * clients_size_frac[idx] * cur_sim * local_grad
                     # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
-            ret_dict[key] = ret_dict[key] + (1-beta_GP[idx]) * global_grad
+                ret_dict[key] = ret_dict[key] + (1-beta_GP[idx]) * global_grad * clients_size_frac[idx]
         else:
             # ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             # for idx, local_dict in enumerate(local_models_dict):
@@ -399,7 +399,7 @@ def update_global_convex(args, local_models_dict, old_global_model_dict, finetun
                     # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * cos_sim[idx] * local_grad
                     ret_dict[key] = ret_dict[key] + beta_DA[idx] * (clients_size[idx] / cur_sum) * local_grad
                         # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
-            ret_dict[key] = ret_dict[key] + (1-beta_DA[idx]) * global_grad
+                    ret_dict[key] = ret_dict[key] + (1-beta_DA[idx]) * global_grad * (clients_size[idx] / cur_sum)
         else:
             # ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             # for idx, local_dict in enumerate(local_models_dict):
