@@ -1,1 +1,1 @@
-# FedGP
+# Federated Auto-weighted Domain Adaptation
