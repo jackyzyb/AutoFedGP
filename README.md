@@ -1,1 +1,1 @@
-# Federated Auto-weighted Domain Adaptation
+# Principalled Federated Domain Adaptation: Gradient Projection and Auto-Weighted Scheme
