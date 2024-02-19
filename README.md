@@ -8,6 +8,7 @@ This is the repository for our paper ["Principled Federated Domain Adaptation: G
 3. [Auto-weighted versions of FedDA and FedGP](#auto-weighted-versions-of-fedda-and-fedgp)
 4. [Contributors](#contributors)
 5. [How to cite?](#how-to-cite)
+6. [Credits](#credits)
 
 ## Installation
 
@@ -33,3 +34,16 @@ year={2024},
 url={https://openreview.net/forum?id=6J3ehSUrMU}
 }
 ```
+
+## Credits
+Parts of the code in this repo is based on
+
+- https://github.com/nicchiou/domain_adapt_cxr
+
+- https://github.com/uiuc-federated-learning/ml-fault-injector
+
+- https://github.com/Xtra-Computing/NIID-Bench
+
+- https://github.com/facebookresearch/DomainBed
+
+- https://github.com/owkin/FLamby
