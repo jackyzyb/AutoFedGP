@@ -28,7 +28,6 @@ def train(args, hparams, da_phase, model, criterion: torch.nn.Module, train_dl):
 
     model.to(device)
     lr = hparams["lr"] if da_phase=='source' else hparams["lr"] * args.lr_ratio
-    # print(lr)
     optimizer = torch.optim.Adam(model.parameters(), lr= lr)
 
     model.train()
@@ -124,7 +123,6 @@ def average_weights(w, alpha):
         w_avg[key] = torch.zeros_like(w_avg[key]).float()
         for i in range(len(w)):
             w_avg[key] += w[i][key] * alpha[i]
-        # w_avg[key] = torch.div(w_avg[key], len(w))
     return w_avg
 
 def update_dict(old_model_dict, new_model_dict, alpha):
@@ -137,7 +135,6 @@ def update_dict(old_model_dict, new_model_dict, alpha):
 def update_global(args, hparams, local_models_dict, old_global_model_dict, finetune_global_model_dict, clients_size, clients_size_frac, cur_epoch):
     ret_dict = copy.deepcopy(old_global_model_dict)
     b = args.proj_w
-    # b = 0.5 * (1 - cur_epoch / args.num_global_epochs) + 0.5
     cos = torch.nn.CosineSimilarity()
     for key in ret_dict.keys():
         if ret_dict[key].shape != torch.Size([]):
@@ -145,44 +142,29 @@ def update_global(args, hparams, local_models_dict, old_global_model_dict, finet
             for idx, local_dict in enumerate(local_models_dict):
                 local_grad = local_dict[key] - old_global_model_dict[key]
                 cur_sim = cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1))
-                # print(global_grad.shape, local_grad.shape)
-                # print(cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1)))
-                # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * cos_sim[idx] * local_grad
                 if cur_sim > 0:
                     ret_dict[key] = ret_dict[key] + b * args.lr_ratio * ((args.n_target_samples/16)/(clients_size[idx]/hparams['batch_size'])) * clients_size_frac[idx] * cur_sim * local_grad
-                    # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
-                # else:
-                #     print('negative!!!')
             ret_dict[key] = ret_dict[key] + (1-b) * global_grad
         else:
             ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             for idx, local_dict in enumerate(local_models_dict):
                 ret_dict[key] += clients_size_frac[idx] * local_dict[key]
-            # ret_dict[key] = old_global_model_dict[key]
     return ret_dict
 
 def update_global_convex(args, local_models_dict, old_global_model_dict, finetune_global_model_dict, clients_size, clients_size_frac, cur_epoch):
     ret_dict = copy.deepcopy(old_global_model_dict)
     b = args.proj_w
-    # b = 0.5 * (1 - cur_epoch / args.num_global_epochs) + 0.5
-    cos = torch.nn.CosineSimilarity()
     for key in ret_dict.keys():
         if ret_dict[key].shape != torch.Size([]):
             global_grad = finetune_global_model_dict[key] - old_global_model_dict[key]
             for idx, local_dict in enumerate(local_models_dict):
                 local_grad = local_dict[key] - old_global_model_dict[key]
-                # cur_sim = cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1))
-                # print(global_grad.shape, local_grad.shape)
-                # print(cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1)))
-                # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * cos_sim[idx] * local_grad
                 ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * local_grad
-                    # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
             ret_dict[key] = ret_dict[key] + (1-b) * global_grad
         else:
             ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             for idx, local_dict in enumerate(local_models_dict):
                 ret_dict[key] += clients_size_frac[idx] * local_dict[key]
-            # ret_dict[key] = old_global_model_dict[key]
     return ret_dict
 
 # get the grad updates
@@ -219,8 +201,6 @@ if __name__ == "__main__":
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--dataset', type=str, default="RotatedMNIST")
     parser.add_argument('--algorithm', type=str, default="fedgp")
-    # parser.add_argument('--task', type=str, default="domain_generalization",
-        # choices=["domain_generalization", "domain_adaptation"])
     parser.add_argument('--hparams', type=str,
         help='JSON-serialized hparams dict')
     parser.add_argument('--hparams_seed', type=int, default=0,
@@ -230,28 +210,16 @@ if __name__ == "__main__":
         'random_hparams).')
     parser.add_argument('--seed', type=int, default=0,
         help='Seed for everything else')
-    # parser.add_argument('--steps', type=int, default=None,
-        # help='Number of steps. Default is dataset-dependent.')
-    # parser.add_argument('--checkpoint_freq', type=int, default=None,
-        # help='Checkpoint every N steps. Default is dataset-dependent.')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[0]) # which domain to be target domain.
-    # parser.add_argument('--output_dir', type=str, default="train_output")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0.15,
         help="For domain adaptation, % of test to use unlabeled for training.")
-    # parser.add_argument('--skip_model_save', action='store_true')
-    # parser.add_argument('--save_model_every_checkpoint', action='store_true')
     args = parser.parse_args()
-    # deterministic(args.train_seed)
 
     # If we ever want to implement checkpointing, just persist these values
     # every once in a while, and then load them from disk here.
     start_step = 0
     algorithm_dict = None
-
-    # os.makedirs(args.output_dir, exist_ok=True)
-    # sys.stdout = misc.Tee(os.path.join(args.output_dir, 'out.txt'))
-    # sys.stderr = misc.Tee(os.path.join(args.output_dir, 'err.txt'))
 
     if args.hparams_seed == 0:
         hparams = hparams_registry.default_hparams(args.algorithm, args.dataset)
@@ -340,19 +308,6 @@ if __name__ == "__main__":
     with open(os.path.join(exp_dir, f'args_{args.iter_idx}.json'), 'w') as f:
         json.dump(args.__dict__, f, indent=4)
 
-        # if hparams['class_balanced']:
-        #     in_weights = misc.make_weights_for_balanced_classes(in_)
-        #     out_weights = misc.make_weights_for_balanced_classes(out)
-        #     if uda is not None:
-        #         uda_weights = misc.make_weights_for_balanced_classes(uda)
-        # else:
-        #     in_weights, out_weights, uda_weights = None, None, None
-
-        # in_splits.append(in_)
-        # out_splits.append(out)
-
-        # if len(uda):
-        #     uda_splits.append(uda)
     print(f'target:{server}, sources:{clients}')
     num_clients = len(clients)
     dict_client = dict()
@@ -366,9 +321,7 @@ if __name__ == "__main__":
     # intialize models
     global_model = domainbedNet(dataset.input_shape, dataset.num_classes,
         len(dataset) - len(args.test_envs), hparams)
-    # print(dataset.input_shape)
-    # print(global_model)
-    # weiotu
+
     global_model.to(device)
     global_model_dict = global_model.state_dict()
 
@@ -408,7 +361,6 @@ if __name__ == "__main__":
             for idx in range(num_clients):
                 local_models[idx].load_state_dict(global_model_dict)
                 local_models[idx], (loss, acc, auc) = train(args, hparams, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
-            # print(local_models)
             global_model_dict = average_weights([model.state_dict() for model in local_models], clients_size_frac)
             global_model.load_state_dict(global_model_dict)
 
@@ -444,21 +396,13 @@ if __name__ == "__main__":
             else:
                 global_model = copy.deepcopy(new_model)
         else:
-            # print('eorigut')
             global_model_dict = average_weights([model.state_dict() for model in local_models], clients_size_frac)
             global_model.load_state_dict(global_model_dict)
             if args.finetune:
-                # Freeze all but last layer
-                # for name, param in global_model.named_parameters():
-                    # if not 'linear' in name:
-                    #     param.requires_grad = False
                 global_model, (loss, acc, auc) = train(args, hparams, 'target', global_model, criterion, server_dls['train'][0])
                 server_results['train']['loss'].append(loss)
                 server_results['train']['acc'].append(acc)
                 server_results['train']['auc'].append(auc)
-                # unfreeze all
-                # for name, param in global_model.named_parameters():
-                #     param.requires_grad = True
                 global_model_dict = global_model.state_dict()
 
         print('testing global model on its target domain')
@@ -476,6 +420,3 @@ if __name__ == "__main__":
     fp.close()
 
     torch.save(global_model.state_dict(),os.path.join(exp_dir,f'server_checkpoint_{args.iter_idx}.pt'))
-
-    # for idx in local_models:
-    #     torch.save(local_models[idx].state_dict(),os.path.join(exp_dir,f'client_{idx}_checkpoint_{args.iter_idx}.pt'))

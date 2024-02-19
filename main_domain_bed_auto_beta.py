@@ -218,7 +218,6 @@ def average_weights(w, alpha):
         w_avg[key] = torch.zeros_like(w_avg[key]).float()
         for i in range(len(w)):
             w_avg[key] += w[i][key] * alpha[i]
-        # w_avg[key] = torch.div(w_avg[key], len(w))
     return w_avg
 
 def update_dict(old_model_dict, new_model_dict, alpha):
@@ -231,61 +230,42 @@ def update_dict(old_model_dict, new_model_dict, alpha):
 def update_global(args, hparams, local_models_dict, old_global_model_dict, finetune_global_model_dict, clients_size, clients_size_frac, cur_epoch, beta_GP):
     ret_dict = copy.deepcopy(old_global_model_dict)
     b = beta_GP
-    # b = 0.5 * (1 - cur_epoch / args.num_global_epochs) + 0.5
     cos = torch.nn.CosineSimilarity()
     for key in ret_dict.keys():
         if ret_dict[key].shape != torch.Size([]):
             global_grad = finetune_global_model_dict[key] - old_global_model_dict[key]
             for idx, local_dict in enumerate(local_models_dict):
                 local_grad = local_dict[key] - old_global_model_dict[key]
-                # if key.split('.')[1] == '1':
                 cur_sim = cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1))
-                # print(global_grad.shape, local_grad.shape)
-                # print(cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1)))
-                # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * cos_sim[idx] * local_grad
                 if cur_sim > 0:
                     ret_dict[key] = ret_dict[key] + beta_GP[idx] * args.lr_ratio * (args.num_target_epochs / args.num_source_epochs) * ((args.n_target_samples/args.target_batch_size)/(clients_size[idx]/hparams['batch_size'])) * clients_size_frac[idx] * cur_sim * local_grad
-                # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
-                # else:
-                    # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * local_grad
                 ret_dict[key] = ret_dict[key] + (1-beta_GP[idx]) * global_grad * clients_size_frac[idx]
         else:
             ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             for idx, local_dict in enumerate(local_models_dict):
                 ret_dict[key] += clients_size_frac[idx] * local_dict[key]
-            # ret_dict[key] = old_global_model_dict[key]
     return ret_dict
 
 def update_global_convex(args, local_models_dict, old_global_model_dict, finetune_global_model_dict, clients_size, clients_size_frac, cur_epoch, beta_DA):
     ret_dict = copy.deepcopy(old_global_model_dict)
-    # b = beta_DA
-    # b = 0.5 * (1 - cur_epoch / args.num_global_epochs) + 0.5
-    # cos = torch.nn.CosineSimilarity()
     for key in ret_dict.keys():
         if ret_dict[key].shape != torch.Size([]):
             global_grad = finetune_global_model_dict[key] - old_global_model_dict[key]
             for idx, local_dict in enumerate(local_models_dict):
                 local_grad = local_dict[key] - old_global_model_dict[key]
-                # cur_sim = cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1))
-                # print(global_grad.shape, local_grad.shape)
-                # print(cos(global_grad.reshape(1,-1), local_grad.reshape(1,-1)))
-                # ret_dict[key] = ret_dict[key] + b * clients_size_frac[idx] * cos_sim[idx] * local_grad
                 ret_dict[key] = ret_dict[key] + beta_DA[idx] * clients_size_frac[idx] * local_grad
-                    # ret_dict[key] = ret_dict[key] + b * (clients_size[idx] / args.n_target_samples) * clients_size_frac[idx] * cur_sim * local_grad
                 ret_dict[key] = ret_dict[key] + (1-beta_DA[idx]) * global_grad * clients_size_frac[idx]
         else:
             ret_dict[key] = torch.zeros_like(old_global_model_dict[key]).float()
             for idx, local_dict in enumerate(local_models_dict):
                 ret_dict[key] += clients_size_frac[idx] * local_dict[key]
-            # ret_dict[key] = old_global_model_dict[key]
     return ret_dict
 
 # get the grad updates
 def get_model_updates(init_model, new_model):
     init = get_param_list(init_model)
     new = get_param_list(new_model)
-    
-    # print(new.shape, init.shape)
+
     return (new - init)
 
 def get_param_list(model):
@@ -330,14 +310,12 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=0,
         help='Seed for everything else')
     parser.add_argument('--test_envs', type=int, nargs='+', default=[0]) # which domain to be target domain.
-    # parser.add_argument('--output_dir', type=str, default="train_output")
     parser.add_argument('--holdout_fraction', type=float, default=0.2)
     parser.add_argument('--uda_holdout_fraction', type=float, default=0.15,
         help="For domain adaptation, % of test to use unlabeled for training.")
 
 
     args = parser.parse_args()
-    # deterministic(args.train_seed)
 
     if args.hparams_seed == 0:
         hparams = hparams_registry.default_hparams(args.algorithm, args.dataset)
@@ -388,11 +366,6 @@ if __name__ == "__main__":
     server = []
     for env_i, env in enumerate(dataset):
         uda = []
-        # sample a subset for domainnet
-        # if args.dataset == 'DomainNet':
-        #     env, _ = misc.split_dataset(env,
-        #         30000,
-        #         misc.seed_hash(args.trial_seed, env_i))
 
         # split training/testing data
         out, in_ = misc.split_dataset(env,
@@ -407,20 +380,13 @@ if __name__ == "__main__":
             out, in_ = misc.split_dataset(in_,
             int(len(in_)*args.holdout_fraction),
             misc.seed_hash(args.trial_seed, env_i))
-            # valid, in_ = misc.split_dataset(env,
-            # int(len(in_)*args.uda_holdout_fraction),
-            # misc.seed_hash(args.trial_seed, env_i))
+
             args.n_target_samples = len(uda)
             print(f"number of target samples: {len(uda)}")
             server_dls['train'].append(torch.utils.data.DataLoader(
             uda,
             num_workers=dataset.N_WORKERS,
             batch_size=args.target_batch_size))
-            # use the validation set the same size as the training set
-            # server_dls['val'].append(torch.utils.data.DataLoader(
-            # valid,
-            # num_workers=dataset.N_WORKERS,
-            # batch_size=args.target_batch_size))
             server_dls['test'].append(torch.utils.data.DataLoader(
             out,
             num_workers=dataset.N_WORKERS,
@@ -456,9 +422,6 @@ if __name__ == "__main__":
     global_model = domainbedNet(dataset.input_shape, dataset.num_classes,
         len(dataset) - len(args.test_envs), hparams)
     
-    # print(dataset.input_shape)
-    # print(global_model)
-    # weiotu
     global_model.to(device)
     global_model_dict = global_model.state_dict()
 
@@ -519,15 +482,9 @@ if __name__ == "__main__":
                 local_models[idx], _, (loss, acc, auc) = train_source(args, hparams, 'source', copy.deepcopy(local_models[idx]), criterion, clients_dls['train'][idx])
                 gc.collect()
                 torch.cuda.empty_cache()
-            # print(local_models)
             global_model_dict = average_weights([model.state_dict() for model in local_models], clients_size_frac)
             global_model.load_state_dict(global_model_dict)
 
-    # beta_start = torch.tensor(0.5)
-    # beta_start.to(device)
-    # gamma = 0.5
-    # beta_GP_0 = [beta_start for i in range(num_clients)]
-    # hparams["lr"] = hparams["lr"] * 0.5
     hparams["lr"] = hparams["lr"] * 0.1
     for i in range(args.num_global_epochs):
         # training local models
@@ -560,17 +517,11 @@ if __name__ == "__main__":
                         metric_results['source_target_var'][clients[i]].append(metrics.source_target_var[i].item())
                         metric_results['projected_norm'][clients[i]].append(metrics.projected_grads_norm_square[i].item())
                         metric_results['delta'][clients[i]].append(metrics.deltas[i])
-                beta_GP_1 = metrics.return_fedgp_beta()
-                # print(beta_GP_1)
-                # if i == 0:
-                #     beta_GP_0 = copy.deepcopy(beta_GP_1)
-                # beta_GP_1 = [beta_GP_0[i] * gamma + beta_GP_1[i] * (1-gamma)  for i in range(num_clients)]
-                # print(beta_GP_1)
-                for idx, beta in enumerate(beta_GP_1):
+                beta_GP = metrics.return_fedgp_beta()
+                for idx, beta in enumerate(beta_GP):
                     server_results['beta'][clients[idx]].append(beta.item())
-                global_model_dict = update_global(args, hparams, [model.state_dict() for model in local_models], global_model.state_dict(), new_model.state_dict(), clients_size, clients_size_frac, i, beta_GP_1)
+                global_model_dict = update_global(args, hparams, [model.state_dict() for model in local_models], global_model.state_dict(), new_model.state_dict(), clients_size, clients_size_frac, i, beta_GP)
                 global_model.load_state_dict(global_model_dict)
-                # beta_GP_0 = copy.deepcopy(beta_GP_1)
             else:
                 global_model = copy.deepcopy(new_model)
         elif args.convex_agg:
@@ -585,7 +536,6 @@ if __name__ == "__main__":
                     for i in range(num_clients):
                         metric_results['source_target_var'][clients[i]].append(metrics.source_target_var[i].item())
                 beta_DA = metrics.return_fedda_beta()
-                # print(beta_DA)
                 for idx, beta in enumerate(beta_DA):
                     server_results['beta'][clients[idx]].append(beta.item())
                 global_model_dict = update_global_convex(args, [model.state_dict() for model in local_models], global_model.state_dict(), new_model.state_dict(), clients_size, clients_size_frac, i, beta_DA)
@@ -596,17 +546,10 @@ if __name__ == "__main__":
             global_model_dict = average_weights([model.state_dict() for model in local_models], clients_size_frac)
             global_model.load_state_dict(global_model_dict)
             if args.finetune:
-                # Freeze all but last layer
-                # for name, param in global_model.named_parameters():
-                    # if not 'linear' in name:
-                    #     param.requires_grad = False
                 global_model, (loss, acc, auc) = train_target(args, hparams, 'target', global_model, criterion, server_dls['train'][0])
                 server_results['train']['loss'].append(loss)
                 server_results['train']['acc'].append(acc)
                 server_results['train']['auc'].append(auc)
-                # unfreeze all
-                # for name, param in global_model.named_parameters():
-                #     param.requires_grad = True
                 global_model_dict = global_model.state_dict()
 
         print('testing global model on its target domain')
@@ -618,7 +561,6 @@ if __name__ == "__main__":
         # test on the validation set
         if args.early_stop:
             (val_loss, val_acc, _) = test(args, global_model, criterion, server_dls['val'][0])
-            # print(val_loss, val_acc)
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_model_weights = global_model.state_dict()
@@ -632,10 +574,6 @@ if __name__ == "__main__":
             if epochs_no_improve == patience:
                 print("Early stopping! No improvement in validation loss for {} epochs.".format(patience))
                 break
-
-    # with open(os.path.join(exp_dir,(f'clients_results_{args.iter_idx}.json')), 'w') as fp:
-    #         json.dump(clients_results, fp, indent=4)
-    # fp.close()
     
     with open(os.path.join(exp_dir,(f'server_results_{args.iter_idx}.json')), 'w') as fp:
             json.dump(server_results, fp, indent=4)
@@ -645,8 +583,3 @@ if __name__ == "__main__":
         with open(os.path.join(exp_dir,(f'metric_results_{args.iter_idx}.json')), 'w') as fp:
                 json.dump(metric_results, fp, indent=4)
         fp.close()
-
-    # torch.save(best_model_weights, os.path.join(exp_dir,f'server_checkpoint_{args.iter_idx}.pt'))
-
-    # for idx in local_models:
-    #     torch.save(local_models[idx].state_dict(),os.path.join(exp_dir,f'client_{idx}_checkpoint_{args.iter_idx}.pt'))
