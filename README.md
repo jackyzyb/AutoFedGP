@@ -57,5 +57,3 @@ Parts of the code in this repo is based on
 - https://github.com/Xtra-Computing/NIID-Bench
 
 - https://github.com/facebookresearch/DomainBed
-
-- https://github.com/owkin/FLamby
