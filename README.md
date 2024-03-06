@@ -1,4 +1,4 @@
-# Principled Federated Domain Adaptation: Gradient Projection and Auto-Weighted Scheme
+# Principled Federated Domain Adaptation: Gradient Projection and Auto-Weighting
 
 This is the repository for our paper ["Principled Federated Domain Adaptation: Gradient Projection and Auto-Weighting"](https://openreview.net/forum?id=6J3ehSUrMU)
 
