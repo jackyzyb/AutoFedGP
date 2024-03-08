@@ -18,10 +18,6 @@ for center in range(num_centers):
     stride = int(N / num_centers)
     X[:, center * stride: (center + 1) * stride] += centers[:, center].reshape([-1, 1])
 
-# normalize the data to be within the unit ball
-# r_max = (sum(X * X) ** 0.5).max()
-# X /= r_max
-
 # generate rbf feature functions
 mu = np.random.random([n, m]) - 0.5
 sigma_square = 100 * np.random.random(m)
@@ -41,14 +37,6 @@ for source_target_diff in list(np.arange(0., 1., 0.07)):
     # generate Y
     Y = A.dot(features) + b
 
-    # save_name = 'rbf-n-' + str(n) + '-d-' + str(d) + '-m-' + str(m) + '-N-' + str(N) + '-num_centers-' + str(num_centers)
-    # np.savez('datasets/' + save_name, X=X, Y=Y)
-
     save_name = 'rbf-n-' + str(n) + '-d-' + str(d) + '-m-' + str(m) + '-N-' + str(N) + '-num_centers-' + str(
         num_centers) + 'source_target_diff-' + str(source_target_diff)
     np.savez('datasets/' + save_name, X=X, Y=Y)
-
-    # # slighted changed
-    # save_name = 'alter-' + 'rbf-n-' + str(n) + '-d-' + str(d) + '-m-' + str(m) + '-N-' + str(N) + '-num_centers-' + str(num_centers)
-    # shift = np.random.random([X.shape[0], 1]) - 0.5
-    # np.savez('datasets/' + save_name, X=X + shift, Y=Y)
