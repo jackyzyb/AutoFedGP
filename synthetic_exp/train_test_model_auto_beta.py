@@ -2,6 +2,7 @@ from models import NN, Metrics_n_Datasets
 import torch
 import numpy as np
 from empirical_metrics_batch import empirical_metrics_batch
+from tqdm import tqdm
 
 # settings
 n = 50  # dim of x
@@ -14,14 +15,13 @@ num_epoch = 300
 initialization_num_epoch = 50
 beta = 0.5
 auto_beta = True
-is_estimation = True # choose to use estimated quantities to compute beta
+is_estimation = True  # choose to use estimated quantities to compute beta
 seed = 1
 batch_size = 2
 torch.manual_seed(seed)
 np.random.seed(seed)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print('running on ' + str(device))
-
 
 # load source data
 data_file_handle = 'rbf-n-' + str(n) + '-d-' + str(d) + '-m-' + str(m) + '-N-' + str(N) + '-num_centers-' + str(
@@ -31,11 +31,13 @@ data = np.load(data_file)
 source_X = torch.Tensor(data['X']).to(device)
 source_Y = torch.Tensor(data['Y']).to(device)
 
+# these ratios are chosen such that they can cover most of the cases
 target_sample_ratio_list = np.array(list(np.exp(np.arange(np.log(0.003), np.log(0.5),  (np.log(0.4) - np.log(0.001)) / 10))))
 source_target_dist_list = np.array(list(np.arange(0., 1., 0.07)))
+
 # train models
-for source_target_dist in source_target_dist_list:
-    for target_sample_ratio in target_sample_ratio_list:
+for source_target_dist in tqdm(source_target_dist_list):
+    for target_sample_ratio in tqdm(target_sample_ratio_list):
 
         # train models
         data_file_handle = 'rbf-n-' + str(n) + '-d-' + str(d) + '-m-' + str(m) + '-N-' + str(N) + '-num_centers-' + str(
@@ -48,7 +50,6 @@ for source_target_dist in source_target_dist_list:
 
         initialization_model_file = './models/temp_model'
         model_initial = NN(n, d, m, device)
-        # model_initial.train(dataset, initialization_num_epoch, 'initialization_train')
         model_initial.save_model(initialization_model_file)
         # ensure the same initialization
         model_gp = NN(n, d, m, device)
@@ -84,11 +85,8 @@ for source_target_dist in source_target_dist_list:
         print('true tau is {}; its estimation: {}'.format(true_tau, estimated_tau))
         print('estimated delta: {}'.format(estimated_delta))
         print('true projected_grad_norm_square: {}; its estimation: {}'.format(true_projected_grad_norm_square, estimated_projected_grad_norm_square))
+
         # compute estimated error terms
-
-
-        # best_beta = target_var / (target_var + source_target_var)
-
         if is_estimation:
             target_var = estimated_target_var
             source_target_var = estimated_source_target_var
@@ -101,10 +99,7 @@ for source_target_dist in source_target_dist_list:
             projected_grad_norm_square = true_projected_grad_norm_square 
         # choice of beta for GP and DA
         if auto_beta:
-            # beta_GP = target_var / (target_var + tau ** 2 * source_target_var) # not using delta
-            #beta_GP = target_var / (target_var + estimated_delta * tau ** 2 * source_target_var + (1-estimated_delta) * estimated_target_norm_square) # using estimated delta
             beta_GP = target_var / (target_var + projected_grad_norm_square)
-            # beta_GP = target_var / (target_var + true_projected_grad_norm_square)
             beta_DA = target_var / (target_var + source_target_var)
         else:
             beta_GP = beta
@@ -114,9 +109,6 @@ for source_target_dist in source_target_dist_list:
         true_delta_error_gp = dataset.compute_delta_error_gp(beta_GP, normalized=True)
         approximated_delta_error_gp = ((1-beta_GP)**2 + (2*beta_GP-beta_GP ** 2)/dim) * target_var + beta_GP**2 * true_projected_grad_norm_square
         print('true delta error gp is {}, its approximation is {}'.format(true_delta_error_gp, approximated_delta_error_gp))
-
-
-
 
         print('training GP with source-target diff {} and target sample ratio {}'.format(source_target_dist, target_sample_ratio))
         test_loss_gp = model_gp.train(dataset, num_epoch, 'gradient_proj', beta_GP)
@@ -130,11 +122,6 @@ for source_target_dist in source_target_dist_list:
                                                                                                      target_sample_ratio))
         test_loss_source_only = model_source_only.train(dataset, num_epoch, 'convex_combine', beta=1)
 
-        # result_dict = {'test_loss_gp': test_loss_gp, 'test_loss_convex': test_loss_convex, 'test_loss_target_only':
-        #     test_loss_target_only, 'test_loss_source_only': test_loss_source_only, 'source_target_var': source_target_var,
-        #                "target_var": target_var, 'estimated_error_gp': estimated_error_gp,
-        #                'estimated_error_convex': estimated_error_convex, 'estimated_error_target_only': estimated_error_target_only,
-        #                'estimated_error_source_only': estimated_error_source_only}
         result_dict = {'test_loss_gp': test_loss_gp, 'test_loss_convex': test_loss_convex, 'test_loss_target_only':
             test_loss_target_only, 'test_loss_source_only': test_loss_source_only, 'source_target_var': true_source_target_var,
                        "target_var": true_target_var, 'estimated_source_target_var': estimated_source_target_var,

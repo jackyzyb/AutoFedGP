@@ -18,8 +18,9 @@ beta = 0.5
 # seed = 1
 seeds = [1]
 
-auto_beta = False
-is_estimation = False
+# make sure these settings match those in the train_test_model_auto_beta.py
+auto_beta = True
+is_estimation = True
 is_prediction = False
 
 gp_list = [[], []]
@@ -30,15 +31,12 @@ lists = [gp_list, convex_list, target_only_list, source_only_list]
 max_target_var = 0
 max_source_target_var = 0
 
+# make sure these ratios match those in the train_test_model_auto_beta.py
 target_sample_ratio_list = np.array(list(np.exp(np.arange(np.log(0.003), np.log(0.5),  (np.log(0.4) - np.log(0.001)) / 10))))
 source_target_dist_list = np.array(list(np.arange(0., 1., 0.07)))
 # train models
 for source_target_dist in source_target_dist_list:
     for target_sample_ratio in target_sample_ratio_list:
-        # result_dict = {'test_loss_gp': test_loss_gp, 'test_loss_convex': test_loss_convex, 'test_loss_target_only':
-        #     test_loss_target_only, 'test_loss_source_only': test_loss_source_only,
-        #                'source_target_var': source_target_var,
-        #                "target_var": target_var}
         test_loss_gp_list = []
         test_loss_convex_list = []
         test_loss_target_only_list = []
@@ -136,7 +134,6 @@ axis_lim = max(max_source_target_var, max_target_var)
 plt.xlim([-axis_lim/20, axis_lim * 1.1])
 plt.ylim([-axis_lim/20, axis_lim * 1.1])
 
-# plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', fontsize=15)
 plt.legend(loc='upper left', fontsize=20)
 
 
