@@ -19,6 +19,8 @@ To install requirements, one can run:
 
 `pip install -r requirements.txt`
 
+For the synthetic experiment used in the paper, please refer to [synthetic_exp](https://github.com/jackyzyb/AutoFedGP/tree/main/synthetic_exp).
+
 ## FedDA and FedGP
 We provide scripts to run *FedDA* and *FedGP* experiments, for both the non-iid and domainbed datasets. One can run `run_fedda_0.5.sh` and `run_fedgp_0.5.sh` in `scripts/noniid_exp` and `scripts/domainbed_exp` folders.
 
