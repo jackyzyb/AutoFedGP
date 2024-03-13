@@ -114,7 +114,7 @@ class Metrics_n_Datasets:
 
     def compute_tau(self):
         # see section 4.2 for definition
-        eps = 0.001 # room to numerical error
+        eps = 0.001  # room to numerical error
         model = self.list_of_model[0]
         grads_S = model.get_gradients(self.source_X, self.source_Y)
         grads_T = model.get_gradients(self.target_X_all, self.target_Y_all)
@@ -182,7 +182,6 @@ class NN:
         self.g_b1 = 0.
         self.g_W2 = 0.
         self.g_b2 = 0.
-        losses = []
         for epoch in range(num_epoch):
             grad_S = self.get_gradients(dataset.source_X, dataset.source_Y, is_flatten=False)
             grad_T = self.get_gradients(dataset.target_X, dataset.target_Y, is_flatten=False)
@@ -218,12 +217,7 @@ class NN:
                 self.b1.grad.zero_()
                 self.b2.grad.zero_()
 
-            # if epoch % 40 == 0:
-            #     loss = self.test(dataset)
-            #     print('loss at epoch {} is {}'.format(epoch, loss))
-
         loss = self.test(dataset)
-            # losses.append(loss.item())
         print('final loss at epoch {} is {}'.format(epoch, loss))
         return loss
 
@@ -253,7 +247,6 @@ class NN:
             grad[start: start + self.m * self.d] = self.W2.grad.flatten()
             start += self.m * self.d
             grad[start:] = self.b2.grad.flatten()
-            # grad[:] = self.W2.grad.flatten()
             self.W1.grad.zero_()
             self.W2.grad.zero_()
             self.b1.grad.zero_()
